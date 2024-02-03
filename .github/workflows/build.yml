@@ -97,21 +97,7 @@ jobs:
           VERSION: v0.0.1
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_ID=$(gh api -X POST \
-            /repos/${{ github.repository }}/releases \
-            -f tag_name='${{ env.VERSION }}' \
-            -f name='${{ env.VERSION }}' \
-            -F prerelease=true \
-            -F generate_release_notes=true | jq -r .id)
-
-          gh api -X POST \
-            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-amd64-${{ env.VERSION }}.tar \
-            -f '@piaros-amd64.tar'
-
-          gh api -X POST \
-            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-arm64-${{ env.VERSION }}.tar \
-            -f '@piaros-arm64.tar'
-
-          gh api -X POST \
-            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-arm-${{ env.VERSION }}.tar \
-            -f '@piaros-arm.tar'
+          gh release create '${{ env.VERSION }}' \
+            -t 'Piaros ${{ env.VERSION }}' \
+            --generate-notes -p \
+            piaros-amd64.tar piaros-arm64.tar piaros-arm.tar
