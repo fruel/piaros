@@ -64,7 +64,11 @@ Create a new Wireguard interface:
 * Upload the container image `.tar` file to your device (make sure to use the proper architecture for your device and that there is enough free storage!)
 * Create the container
   ```
-  /container/add file=piaros-arm64.tar interface=veth-piaros envlist=piaros root-dir=disk1/piaros hostname=piaros
+  /container/add file=piaros-arm64.tar interface=veth-piaros envlist=piaros root-dir=disk1/piaros hostname=piaros dns=1.1.1.1 start-on-boot=yes
+  ```
+* Start the container
+  ```
+  /container/start 0
   ```
 
 If port forwarding is not enabled, the container will exit after the Wiregaurd connection is configured.
