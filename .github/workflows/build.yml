@@ -43,12 +43,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
             suffix=-${{ matrix.arch }},onlatest=true
-            latest=${{ github.event_name == 'workflow_dispatch' }}
+            latest=${{ github.event_name == 'push' && github.ref_type == 'tag' }}
 
       - id: build
         uses: docker/build-push-action@v5
         with:
-          push: ${{ github.event_name == 'workflow_dispatch' }}
+          push: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: BUILDER_TAG=${{ matrix.builder }}
@@ -62,7 +62,7 @@ jobs:
           path: piaros-*.tar
     
   release:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -94,7 +94,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          VERSION: v0.0.1
+          VERSION: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create '${{ env.VERSION }}' \
