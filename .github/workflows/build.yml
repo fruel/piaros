@@ -2,6 +2,9 @@ name: Build Piaros
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    tags:
+      - 'v*'
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -21,18 +24,31 @@ jobs:
             builder: armv7-musleabihf
             platform: linux/arm/v7
     runs-on: ubuntu-latest
+    name: build-${{ matrix.arch }}    
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+        
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          flavor: suffix=${{ matrix.arch }},onlatest=true
+          flavor: |
+            suffix=-${{ matrix.arch }},onlatest=true
+            latest=${{ github.event_name == 'workflow_dispatch' }}
 
       - id: build
         uses: docker/build-push-action@v5
         with:
+          push: ${{ github.event_name == 'workflow_dispatch' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: BUILDER_TAG=${{ matrix.builder }}
@@ -42,5 +58,57 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: piaros-${{ matrix.arch }}
+          name: piaros-${{ matrix.arch }}.tar
           path: piaros-*.tar
+    
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Docker iamge
+        run: |
+          docker image load < piaros-amd64.tar/piaros-amd64.tar
+          docker image load < piaros-arm64.tar/piaros-arm64.tar
+          docker image load < piaros-arm.tar/piaros-arm.tar
+
+          docker manifest create ghcr.io/fruel/piaros:latest \
+             --amend ghcr.io/fruel/piaros:latest-amd64 \
+             --amend ghcr.io/fruel/piaros:latest-arm64 \
+             --amend ghcr.io/fruel/piaros:latest-arm 
+
+          docker manifest push ghcr.io/fruel/piaros:latest
+
+      - name: Create GitHub Release
+        env:
+          VERSION: v0.0.1
+        run: |
+          RELEASE_ID=$(gh api -X POST \
+            /repos/${{ github.repository }}/releases \
+            -f tag_name='${{ env.VERSION }}' \
+            -f name='${{ env.VERSION }}' \
+            -F prerelease=true \
+            -F generate_release_notes=true | jq -r .id)
+
+          gh api -X POST \
+            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-amd64-${{ env.VERSION }}.tar \
+            -f '@piaros-amd64.tar/piaros-amd64.tar'
+
+          gh api -X POST \
+            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-arm64-${{ env.VERSION }}.tar \
+            -f '@piaros-arm64.tar/piaros-arm64.tar'
+
+          gh api -X POST \
+            /repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=piaros-arm-${{ env.VERSION }}.tar \
+            -f '@piaros-arm.tar/piaros-arm.tar'
