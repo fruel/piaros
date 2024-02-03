@@ -7,6 +7,19 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            builder: x86_64-musl
+            platform: linux/amd64
+          - arch: arm64
+            builder: aarch64-musl
+            platform: linux/arm64
+          - arch: arm
+            builder: armv7-musleabihf
+            platform: linux/arm/v7
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,15 +28,19 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: suffix=${{ matrix.arch }},onlatest=true
 
-      - uses: docker/build-push-action@v5
+      - id: build
+        uses: docker/build-push-action@v5
         with:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: BUILDER_TAG=x86_64-musl 
-          platforms: linux/amd64
+          build-args: BUILDER_TAG=${{ matrix.builder }}
+          platforms: ${{ matrix.platform }}
 
-      #- uses: actions/upload-artifact@v4
-      #  with:
-      #    name: piaros-build
-      #    path: piaros-*.tar
+      - run: docker image save ${{ steps.build.outputs.imageid }} -o piaros-${{ matrix.arch }}.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: piaros-${{ matrix.arch }}
+          path: piaros-*.tar
