@@ -64,7 +64,7 @@ Create a new Wireguard interface:
 * Upload the container image `.tar` file to your device (make sure to use the proper architecture for your device and that there is enough free storage!)
 * Create the container
   ```
-  /container/add file=piaros-arm64.tar interface=veth-piaros envlist=piaros root-dir=disk1/piaros hostname=piaros dns=1.1.1.1 start-on-boot=yes
+  /container/add file=piaros-arm64.tar interface=veth-piaros envlist=piaros root-dir=disk1/piaros hostname=piaros logging=yes dns=1.1.1.1 start-on-boot=yes
   ```
 * Start the container
   ```
