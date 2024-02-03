@@ -100,5 +100,5 @@ jobs:
           gh release create '${{ env.VERSION }}' \
             -R ${{ github.repository }} \
             -t 'Piaros ${{ env.VERSION }}' \
-            --generate-notes -p \
+            --generate-notes \
             piaros-*.tar
