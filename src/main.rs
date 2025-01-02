@@ -7,6 +7,13 @@ mod ros;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+struct PortChangeNotifyConfig {
+    webhook_url: Option<String>,
+    qbt_url: Option<String>,
+    qbt_user: Option<String>,
+    qbt_pass: Option<String>,
+}
+
 fn configure_connection(
     pia: &mut pia::PrivateInternetAccess,
     ros: &ros::MikrotikApi,
@@ -52,12 +59,77 @@ fn configure_connection(
     return Ok(());
 }
 
+fn send_port_change_notification(
+    new_port: u16,
+    notify_config: &PortChangeNotifyConfig,
+) -> Result<()> {
+    if notify_config.webhook_url.is_some() {
+        match ureq::post(notify_config.webhook_url.as_ref().unwrap())
+            .send_form(&[("port", &new_port.to_string())])
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Failed to send port change webhook: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+    }
+
+    if notify_config.qbt_url.is_some() {
+        let base_url = notify_config.qbt_url.as_ref().unwrap().trim_end_matches('/');
+        let login_url = format!("{}/api/v2/auth/login", base_url);
+        let logout_url = format!("{}/api/v2/auth/logout", base_url);
+        let set_preference_url = format!("{}/api/v2/app/setPreferences", base_url);
+
+        let agent = ureq::agent();
+
+        if notify_config.qbt_user.is_some() && notify_config.qbt_pass.is_some() {
+            let response = agent.post(&login_url).set("Referer", base_url).send_form(&[
+                ("username", notify_config.qbt_user.as_ref().unwrap()),
+                ("password", notify_config.qbt_pass.as_ref().unwrap()),
+            ]);
+
+            match response {
+                Ok(r) => {
+                    if !r.headers_names().contains(&String::from("set-cookie")) {
+                        error!("qBittorrent login failed: No auth cookie received");
+                        return Err("No auth cookie received".into());
+                    }
+                }
+                Err(e) => {
+                    error!("qBittorrent login failed: {}", e);
+                    return Err(Box::new(e));
+                }
+            };
+        }
+
+        let payload = format!("{{\"listen_port\": {}}}", new_port);
+        let response = agent
+            .post(&set_preference_url)
+            .send_form(&[("json", &payload)]);
+
+        match response {
+            Ok(_) => {}
+            Err(e) => {
+                error!("qBittorrent port change failed: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+
+        if notify_config.qbt_user.is_some() && notify_config.qbt_pass.is_some() {
+            let _ = agent.post(&logout_url).call();
+        }
+    }
+
+    return Ok(());
+}
+
 fn do_port_forwarding(
     pia: &mut pia::PrivateInternetAccess,
     ros: &ros::MikrotikApi,
     interface: &str,
     destination: &str,
-    notify_webhook_url: &Option<String>,
+    notify_config: &PortChangeNotifyConfig,
 ) -> Result<()> {
     let mut pf = pia::PortForward {
         port: 0,
@@ -79,10 +151,8 @@ fn do_port_forwarding(
             ros.add_nat_rule(interface, "udp", pf.port, destination)?;
         }
 
-        if !notify_sent && notify_webhook_url.is_some() {
-            match ureq::post(notify_webhook_url.as_ref().unwrap())
-                .send_form(&[("port", &pf.port.to_string())])
-            {
+        if !notify_sent {
+            match send_port_change_notification(pf.port, notify_config) {
                 Ok(_) => {
                     info!("Sent port change notification");
                     notify_sent = true;
@@ -119,7 +189,13 @@ fn run() -> Result<()> {
     let ros_interface = env::var("PIAROS_ROS_INTERFACE")?;
     let ros_table = env::var("PIAROS_ROS_ROUTE_TABLE").ok();
     let ros_pf_dest = env::var("PIAROS_ROS_PORT_FORWARD_TO").ok();
-    let ros_pf_notify = env::var("PIAROS_ROS_PORT_FORWARD_WEBHOOK").ok();
+
+    let notify_config = PortChangeNotifyConfig {
+        webhook_url: env::var("PIAROS_ROS_PORT_FORWARD_WEBHOOK").ok(),
+        qbt_url: env::var("PIAROS_ROS_PORT_FORWARD_QBT_URL").ok(),
+        qbt_user: env::var("PIAROS_ROS_PORT_FORWARD_QBT_USER").ok(),
+        qbt_pass: env::var("PIAROS_ROS_PORT_FORWARD_QBT_PASSWORD").ok(),
+    };
 
     let port_forward_enabled = ros_table.is_some() && ros_pf_dest.is_some();
 
@@ -142,7 +218,7 @@ fn run() -> Result<()> {
         &ros,
         &ros_interface,
         ros_pf_dest.as_ref().unwrap(),
-        &ros_pf_notify,
+        &notify_config,
     )?;
     return Ok(());
 }
