@@ -54,11 +54,11 @@ jobs:
           build-args: BUILDER_TAG=${{ matrix.builder }}
           platforms: ${{ matrix.platform }}
 
-      - run: docker image save ${{ steps.build.outputs.imageid }} -o piaros-${{ matrix.arch }}.tar
+      - run: docker image save ${{ steps.build.outputs.imageid }} -o piaros-${{ steps.meta.outputs.version }}.tar
 
       - uses: actions/upload-artifact@v4
         with:
-          name: piaros-${{ matrix.arch }}.tar
+          name: piaros-${{ steps.meta.outputs.version }}.tar
           path: piaros-*.tar
     
   release:
@@ -81,9 +81,9 @@ jobs:
 
       - name: Release Docker iamge
         run: |
-          docker image load < piaros-amd64.tar
-          docker image load < piaros-arm64.tar
-          docker image load < piaros-arm.tar
+          docker image load < piaros-*-amd64.tar
+          docker image load < piaros-*-arm64.tar
+          docker image load < piaros-*-arm.tar
 
           docker manifest create ghcr.io/fruel/piaros:latest \
              --amend ghcr.io/fruel/piaros:latest-amd64 \
